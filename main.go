@@ -104,14 +104,19 @@ func buildMetricsMap(client *http.Client, functions []requests.Function, config 
 
 	for _, function := range functions {
 		querySt := url.QueryEscape(`sum(rate(gateway_function_invocation_total{function_name="` + function.Name + `", code=~".*"}[` + duration + `])) by (code, function_name)`)
-		// fmt.Println(function.Name)
+
 		res, err := query.Fetch(querySt)
 		if err != nil {
 			log.Println(err)
 			continue
 		}
 
-		if len(res.Data.Result) > 0 {
+		if len(res.Data.Result) > 0 || function.InvocationCount == 0 {
+
+			if _, exists := metrics[function.Name]; !exists {
+				metrics[function.Name] = 0
+			}
+
 			for _, v := range res.Data.Result {
 
 				if writeDebug {
@@ -129,19 +134,12 @@ func buildMetricsMap(client *http.Client, functions []requests.Function, config 
 							continue
 						}
 
-						if _, exists := metrics[function.Name]; !exists {
-							metrics[function.Name] = 0
-						}
-
 						metrics[function.Name] = metrics[function.Name] + f
 					}
 				}
 			}
-
 		}
-
 	}
-
 	return metrics
 }
 
@@ -154,7 +152,9 @@ func reconcile(client *http.Client, config types.Config, credentials *Credential
 	}
 
 	metrics := buildMetricsMap(client, functions, config)
+
 	for _, fn := range functions {
+
 		if fn.Labels != nil {
 			labels := *fn.Labels
 			labelValue := labels[scaleLabel]
@@ -262,6 +262,7 @@ func sendScaleEvent(client *http.Client, gatewayURL string, name string, replica
 	}
 }
 
+// Version holds the GitHub Release and SHA
 type Version struct {
 	Version struct {
 		Release string `json:"release"`
